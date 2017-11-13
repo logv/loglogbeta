@@ -1,6 +1,8 @@
 package loglogbeta
 
 import (
+	"bytes"
+	"encoding/gob"
 	"math"
 
 	bits "github.com/dgryski/go-bits"
@@ -12,6 +14,7 @@ const (
 	m         = uint32(1 << precision)
 	max       = 64 - precision
 	maxX      = math.MaxUint64 >> max
+	version   = 1
 )
 
 func beta(ez float64) float64 {
@@ -61,6 +64,12 @@ type LogLogBeta struct {
 	alpha     float64
 }
 
+type savedLLB struct {
+	Registers [m]uint8
+	Alpha     float64
+	Version   int
+}
+
 // New returns a LogLogBeta
 func New() *LogLogBeta {
 	return &LogLogBeta{
@@ -97,4 +106,36 @@ func (llb *LogLogBeta) Merge(other *LogLogBeta) {
 			llb.registers[i] = other.registers[i]
 		}
 	}
+}
+
+// MarshalBinary implements the encoding.BinaryMarshaler interface.
+func (llb *LogLogBeta) MarshalBinary() (data []byte, err error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err = enc.Encode(savedLLB{
+		Version:   version,
+		Alpha:     llb.alpha,
+		Registers: llb.registers})
+
+	return buf.Bytes(), err
+}
+
+// UnmarshalBinary implements the encoding.BinaryUnmarshaler interface.
+func (llb *LogLogBeta) UnmarshalBinary(data []byte) error {
+	// Unmarshal version. We may need this in the future if we make
+	// non-compatible changes.
+
+	var sllb savedLLB
+	dec := gob.NewDecoder(bytes.NewReader(data))
+	err := dec.Decode(&sllb)
+
+	if err != nil {
+		return err
+	}
+
+	llb.registers = sllb.Registers
+	llb.alpha = sllb.Alpha
+
+	return nil
+
 }
